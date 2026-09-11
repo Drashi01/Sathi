@@ -69,3 +69,4 @@ npm run dev
 
 - **CSV Export**: `GET http://127.0.0.1:8000/api/export/csv?seed=42`
 - **JSON Simulation Trace**: `POST http://127.0.0.1:8000/api/simulate`
+"# sathi" 
