@@ -14,6 +14,13 @@ class Patient(BaseModel):
     service_remaining: float = 8.0
     pickup_time: Optional[float] = None
 
+class HydrantStation(BaseModel):
+    id: str
+    name: str
+    x: float
+    y: float
+    quadrant: int
+
 class TrafficZone(BaseModel):
     id: str
     name: str
@@ -27,6 +34,7 @@ class TrafficZone(BaseModel):
 class VehicleState(BaseModel):
     id: str
     name: str
+    agency: str = "medical"  # "medical", "fire", "police"
     home_quadrant: int
     current_quadrant: int
     x: float
@@ -34,9 +42,19 @@ class VehicleState(BaseModel):
     capacity: int = 2
     occupied_slots: int = 0
     patients: List[Patient] = Field(default_factory=list)
+    
+    # Fire Attributes
+    water_level: float = 100.0  # 0 to 100%
+    vehicle_type: str = "pumper"  # "pumper", "ladder", "tanker"
+    needs_refill: bool = False
+    
+    # Police Attributes
+    unit_type: str = "patrol"    # "patrol", "swat", "interceptor"
+    suspect_count: int = 0
+    
     target_x: Optional[float] = None
     target_y: Optional[float] = None
-    status: str = "idle"  # "idle", "moving", "busy", "rebalancing"
+    status: str = "idle"  # "idle", "moving", "busy", "rebalancing", "refilling"
     is_rebalancing: bool = False
     rebalance_target_quadrant: Optional[int] = None
     in_traffic_zone: bool = False
@@ -45,6 +63,7 @@ class VehicleState(BaseModel):
 
 class IncidentState(BaseModel):
     id: str
+    agency: str = "medical"  # "medical", "fire", "police", "multi"
     x: float
     y: float
     quadrant: int
@@ -52,6 +71,15 @@ class IncidentState(BaseModel):
     priority: int
     priority_weight: float
     service_time: int = 8
+    
+    # Fire Attributes
+    fire_severity: int = 1   # F1 (Small), F2 (Structure), F3 (Industrial Blaze)
+    required_water: float = 300.0
+    
+    # Police Attributes
+    threat_level: int = 1    # T1 (Hazard), T2 (Burglary), T3 (Hostage/SWAT)
+    requires_swat: bool = False
+    
     status: str = "unassigned"  # "unassigned", "assigned", "servicing", "completed"
     assigned_vehicle_id: Optional[str] = None
     dispatch_time: Optional[int] = None
@@ -62,6 +90,7 @@ class IncidentState(BaseModel):
 class DispatchDecision(BaseModel):
     step: int
     incident_id: str
+    agency: str = "medical"
     priority: int
     vehicle_id: str
     vehicle_name: str
@@ -84,6 +113,7 @@ class QuadrantState(BaseModel):
     is_rebalancing_target: bool = False
 
 class Metrics(BaseModel):
+    scenario: str = "medical"
     total_incidents: int
     assigned_incidents: int
     completed_incidents: int
@@ -94,23 +124,27 @@ class Metrics(BaseModel):
     coverage_outage_minutes: float
     rebalance_moves_count: int = 0
     traffic_delays_encountered: int = 0
+    refill_operations_count: int = 0
     assignment_validity_percent: float
     capacity_utilization_percent: float
     runtime_ms: float
 
 class StepSnapshot(BaseModel):
     time: int
+    scenario: str = "medical"
     vehicles: List[VehicleState]
     incidents: List[IncidentState]
     quadrants: List[QuadrantState]
     recent_decisions: List[DispatchDecision]
     traffic_zones: List[TrafficZone] = Field(default_factory=list)
+    hydrants: List[HydrantStation] = Field(default_factory=list)
     rebalance_events: List[str] = Field(default_factory=list)
     is_critical_broadcast: bool = False
     broadcast_incident: Optional[IncidentState] = None
     outage_active: bool
 
 class SimulationResult(BaseModel):
+    scenario: str = "medical"
     strategy: str
     seed: int
     total_steps: int

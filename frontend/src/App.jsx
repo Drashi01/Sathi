@@ -3,6 +3,8 @@ import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import LiveGrid from './components/LiveGrid';
 import CapacityPanel from './components/CapacityPanel';
+import WaterPanel from './components/WaterPanel';
+import PolicePanel from './components/PolicePanel';
 import CoveragePanel from './components/CoveragePanel';
 import AIExplainerPanel from './components/AIExplainerPanel';
 import ControlBar from './components/ControlBar';
@@ -19,6 +21,7 @@ import { sounds } from './audio/soundEffects';
 
 export default function App() {
   const [activePage, setActivePage] = useState('home');
+  const [scenario, setScenario] = useState('medical'); // 'medical' | 'fire' | 'police' | 'unified'
   const [strategy, setStrategy] = useState('sathi');
   const [seed, setSeed] = useState(42);
   const [simResult, setSimResult] = useState(null);
@@ -33,7 +36,7 @@ export default function App() {
 
   useEffect(() => {
     setLoading(true);
-    fetchSimulation(strategy, seed)
+    fetchSimulation(strategy, seed, scenario)
       .then(res => {
         setSimResult(res);
         setCurrentStep(0);
@@ -43,7 +46,7 @@ export default function App() {
         console.error("Failed to load simulation:", err);
         setLoading(false);
       });
-  }, [strategy, seed]);
+  }, [strategy, seed, scenario]);
 
   useEffect(() => {
     if (isPlaying && simResult) {
@@ -84,8 +87,13 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#0B0F19] text-slate-100 flex selection:bg-cyan-500 selection:text-slate-950 font-sans">
-      {/* Left Sidebar Navigation */}
-      <Sidebar activePage={activePage} setActivePage={setActivePage} />
+      {/* Left Sidebar Navigation with Emergency Scenario Selector */}
+      <Sidebar
+        activePage={activePage}
+        setActivePage={setActivePage}
+        scenario={scenario}
+        setScenario={setScenario}
+      />
 
       {/* Right Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0 min-h-screen">
@@ -112,8 +120,8 @@ export default function App() {
           {loading ? (
             <div className="flex flex-col items-center justify-center py-24 text-center font-mono">
               <div className="w-12 h-12 rounded-full border-4 border-cyan-500 border-t-transparent animate-spin mb-4"></div>
-              <p className="text-cyan-400 text-sm font-bold">Initializing SATHI Neural Dispatcher Engine v3.0...</p>
-              <span className="text-xs text-slate-500 mt-1">Generating 100 causal incidents, fleet vectors & critical broadcast channels</span>
+              <p className="text-cyan-400 text-sm font-bold">Initializing SATHI {scenario.toUpperCase()} Dispatcher v4.0...</p>
+              <span className="text-xs text-slate-500 mt-1">Generating 100 causal incidents, fleet vectors & scenario rules</span>
             </div>
           ) : (
             <>
@@ -127,7 +135,7 @@ export default function App() {
               {activePage === 'sim' && currentSnapshot && (
                 <div className="space-y-6 max-w-7xl mx-auto">
                   <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                    {/* Left 7 Cols: Live 100x100 Grid with Cinematic Camera */}
+                    {/* Left 7 Cols: Live 100x100 Grid */}
                     <div className="lg:col-span-7">
                       <LiveGrid
                         snapshot={currentSnapshot}
@@ -137,13 +145,21 @@ export default function App() {
                       />
                     </div>
 
-                    {/* Right 5 Cols: Coverage Health + Patient Handling Intelligence */}
+                    {/* Right 5 Cols: Scenario Specific Fleet Monitor + Coverage Panel */}
                     <div className="lg:col-span-5 flex flex-col gap-6">
                       <CoveragePanel
                         snapshot={currentSnapshot}
                         outageMinutes={simResult.metrics.coverage_outage_minutes}
                       />
-                      <CapacityPanel snapshot={currentSnapshot} />
+
+                      {/* Scenario Specific Panel */}
+                      {scenario === "fire" ? (
+                        <WaterPanel snapshot={currentSnapshot} />
+                      ) : scenario === "police" ? (
+                        <PolicePanel snapshot={currentSnapshot} />
+                      ) : (
+                        <CapacityPanel snapshot={currentSnapshot} />
+                      )}
                     </div>
                   </div>
 

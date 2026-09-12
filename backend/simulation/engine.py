@@ -2,18 +2,21 @@ import time
 import math
 from typing import List, Dict, Any, Tuple
 from .models import (
-    IncidentState, VehicleState, Patient, QuadrantState, TrafficZone,
+    IncidentState, VehicleState, Patient, QuadrantState, TrafficZone, HydrantStation,
     StepSnapshot, Metrics, SimulationResult, DispatchDecision
 )
 from .generator import (
     generate_incidents, generate_initial_vehicles, get_quadrant_definitions,
-    get_quadrant, generate_traffic_zones, is_in_traffic_zone
+    get_quadrant, generate_traffic_zones, is_in_traffic_zone,
+    generate_fire_incidents, generate_fire_vehicles, generate_hydrant_stations,
+    generate_police_incidents, generate_police_vehicles
 )
 from .dispatcher import SATHIDispatcher, GreedyDispatcher, calculate_distance
 
 class SimulationEngine:
-    def __init__(self, strategy: str = "sathi", seed: int = 42, custom_incidents: List[IncidentState] = None):
+    def __init__(self, strategy: str = "sathi", scenario: str = "medical", seed: int = 42, custom_incidents: List[IncidentState] = None):
         self.strategy_name = strategy
+        self.scenario = scenario
         self.seed = seed
         
         if strategy == "sathi":
@@ -21,20 +24,35 @@ class SimulationEngine:
         else:
             self.dispatcher = GreedyDispatcher()
             
-        if custom_incidents is not None:
-            self.incidents = [inc.model_copy(deep=True) for inc in custom_incidents]
-        else:
-            self.incidents = generate_incidents(count=100, seed=seed)
-            
-        self.vehicles = generate_initial_vehicles()
-        self.quadrants = {q.id: q.model_copy(deep=True) for q in get_quadrant_definitions()}
         self.traffic_zones = generate_traffic_zones()
+        self.hydrants = generate_hydrant_stations()
+        
+        # Load Scenario Specific Fleet & Incidents
+        if scenario == "fire":
+            self.incidents = custom_incidents or generate_fire_incidents(count=100, seed=seed)
+            self.vehicles = generate_fire_vehicles()
+        elif scenario == "police":
+            self.incidents = custom_incidents or generate_police_incidents(count=100, seed=seed)
+            self.vehicles = generate_police_vehicles()
+        elif scenario == "unified":
+            med_inc = generate_incidents(count=35, seed=seed)
+            fire_inc = generate_fire_incidents(count=35, seed=seed)
+            pol_inc = generate_police_incidents(count=30, seed=seed)
+            self.incidents = custom_incidents or (med_inc + fire_inc + pol_inc)
+            self.incidents.sort(key=lambda x: x.arrival_time)
+            self.vehicles = generate_initial_vehicles() + generate_fire_vehicles() + generate_police_vehicles()
+        else: # medical
+            self.incidents = custom_incidents or generate_incidents(count=100, seed=seed)
+            self.vehicles = generate_initial_vehicles()
+
+        self.quadrants = {q.id: q.model_copy(deep=True) for q in get_quadrant_definitions()}
         self.snapshots: List[StepSnapshot] = []
         self.decisions: List[DispatchDecision] = []
         self.rebalance_events: List[str] = []
         self.coverage_outage_minutes = 0.0
         self.rebalance_moves_count = 0
         self.traffic_delays_encountered = 0
+        self.refill_operations_count = 0
 
         self.quad_centers = {
             1: (25.0, 75.0),
@@ -49,17 +67,14 @@ class SimulationEngine:
         unassigned_queue: List[IncidentState] = []
         
         for current_time in range(max_steps):
-            # 1. Process active vehicle movement & patient service timers
+            # 1. Update active vehicles & patient/water/police timers
             self._update_vehicles(current_time, incident_map)
             
             # 2. Reveal new incidents arriving at current_time
             new_incidents = [inc for inc in self.incidents if inc.arrival_time == current_time]
             unassigned_queue.extend(new_incidents)
             
-            # Check for P3 Critical Broadcast
             p3_new = next((inc for inc in new_incidents if inc.priority == 3), None)
-            
-            # Sort unassigned queue: Priority DESC (P3=7, P2=3, P1=1), Arrival ASC
             unassigned_queue.sort(key=lambda x: (-x.priority_weight, x.arrival_time))
             
             # 3. Update quadrant states & count idle vehicles
@@ -109,7 +124,7 @@ class SimulationEngine:
                         target_x=inc.x,
                         target_y=inc.y,
                         status="en_route",
-                        service_remaining=8.0
+                        service_remaining=8.0 if self.scenario == "medical" else 10.0
                     )
                     v.patients.append(patient)
                     v.occupied_slots = len(v.patients)
@@ -134,12 +149,11 @@ class SimulationEngine:
             if self.strategy_name == "sathi":
                 step_rebalance_notes = self._trigger_rebalancing(quad_idle_counts)
 
-            # Check if any P3 decision happened this step
             p3_dispatched = next((d for d in recent_step_decisions if d.priority == 3), None)
             is_crit_broadcast = (p3_new is not None) or (p3_dispatched is not None)
             crit_inc_obj = p3_new or (incident_map.get(p3_dispatched.incident_id) if p3_dispatched else None)
 
-            # 6. Take Step Snapshot for UI Animation
+            # 6. Take Step Snapshot
             snapshot_vehicles = [v.model_copy(deep=True) for v in self.vehicles]
             snapshot_incidents = [inc.model_copy(deep=True) for inc in self.incidents]
             snapshot_quadrants = [q.model_copy(deep=True) for q in self.quadrants.values()]
@@ -147,11 +161,13 @@ class SimulationEngine:
             self.snapshots.append(
                 StepSnapshot(
                     time=current_time,
+                    scenario=self.scenario,
                     vehicles=snapshot_vehicles,
                     incidents=snapshot_incidents,
                     quadrants=snapshot_quadrants,
                     recent_decisions=recent_step_decisions,
                     traffic_zones=self.traffic_zones,
+                    hydrants=self.hydrants,
                     rebalance_events=step_rebalance_notes,
                     is_critical_broadcast=is_crit_broadcast,
                     broadcast_incident=crit_inc_obj,
@@ -167,6 +183,7 @@ class SimulationEngine:
         metrics = self._calculate_metrics(runtime_ms)
         
         return SimulationResult(
+            scenario=self.scenario,
             strategy=self.strategy_name,
             seed=self.seed,
             total_steps=len(self.snapshots),
@@ -226,7 +243,16 @@ class SimulationEngine:
             if in_tz and v.status in ("moving", "busy"):
                 self.traffic_delays_encountered += 1
 
-            if v.status == "idle" or (not v.patients and not v.is_rebalancing):
+            # Fire Engine Hydrant Refilling Check
+            if v.agency == "fire" and v.water_level < 20.0 and v.status == "idle" and not v.needs_refill:
+                v.needs_refill = True
+                nearest_h = min(self.hydrants, key=lambda h: calculate_distance(v.x, v.y, h.x, h.y))
+                v.target_x = nearest_h.x
+                v.target_y = nearest_h.y
+                v.status = "refilling"
+                self.refill_operations_count += 1
+
+            if v.status == "idle" or (not v.patients and not v.is_rebalancing and not v.needs_refill):
                 v.target_x = None
                 v.target_y = None
                 v.occupied_slots = 0
@@ -242,7 +268,13 @@ class SimulationEngine:
                     v.x = v.target_x
                     v.y = v.target_y
                     
-                    if v.is_rebalancing:
+                    if v.status == "refilling":
+                        v.water_level = 100.0
+                        v.needs_refill = False
+                        v.status = "idle"
+                        v.target_x = None
+                        v.target_y = None
+                    elif v.is_rebalancing:
                         v.is_rebalancing = False
                         v.rebalance_target_quadrant = None
                         v.status = "idle"
@@ -269,6 +301,9 @@ class SimulationEngine:
             for p in v.patients:
                 if p.status == "servicing":
                     p.service_remaining -= 1.0
+                    if v.agency == "fire":
+                        v.water_level = max(0.0, v.water_level - 3.0)  # Water depletion as fire is extinguished
+                        
                     if p.service_remaining <= 0:
                         p.status = "completed"
                         completed_patients.append(p)
@@ -283,7 +318,7 @@ class SimulationEngine:
                 
             v.occupied_slots = len(v.patients)
             
-            if not v.is_rebalancing:
+            if not v.is_rebalancing and not v.needs_refill:
                 en_route_patients = [p for p in v.patients if p.status == "en_route"]
                 if en_route_patients:
                     v.target_x = en_route_patients[0].target_x
@@ -317,9 +352,10 @@ class SimulationEngine:
         pw_resp_time = float(weighted_sum / weight_total) if weight_total > 0 else 0.0
 
         total_dispatches = sum(v.total_dispatches for v in self.vehicles)
-        cap_util = min(100.0, (total_dispatches / (20.0 * 2.0)) * 100.0)
+        cap_util = min(100.0, (total_dispatches / (len(self.vehicles) * 2.0)) * 100.0)
 
         return Metrics(
+            scenario=self.scenario,
             total_incidents=total_inc,
             assigned_incidents=assigned_inc,
             completed_incidents=completed_inc,
@@ -330,6 +366,7 @@ class SimulationEngine:
             coverage_outage_minutes=round(self.coverage_outage_minutes, 1),
             rebalance_moves_count=self.rebalance_moves_count,
             traffic_delays_encountered=self.traffic_delays_encountered,
+            refill_operations_count=self.refill_operations_count,
             assignment_validity_percent=100.0 if assigned_inc > 0 else 0.0,
             capacity_utilization_percent=round(cap_util, 1),
             runtime_ms=runtime_ms

@@ -9,13 +9,13 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from simulation.engine import SimulationEngine
-from simulation.generator import generate_incidents, generate_initial_vehicles
+from simulation.generator import generate_incidents, generate_fire_incidents, generate_police_incidents
 from simulation.models import SimulationResult, Metrics
 
 app = FastAPI(
-    title="SATHI – Intelligent Emergency Fleet Dispatcher API",
-    description="Backend simulation engine for SATHI real-time emergency dispatcher with coverage preservation, capacity optimization, and traffic awareness.",
-    version="2.0.0"
+    title="SATHI – Multi-Agency Intelligent Fleet Dispatcher API",
+    description="Backend simulation engine for SATHI real-time emergency dispatcher across Medical, Fire & Rescue, Police Tactical, and Master Unified Command.",
+    version="4.0.0"
 )
 
 app.add_middleware(
@@ -27,46 +27,52 @@ app.add_middleware(
 )
 
 class SimulateRequest(BaseModel):
-    strategy: str = "sathi"
+    strategy: str = "sathi"      # "sathi" or "greedy"
+    scenario: str = "medical"    # "medical", "fire", "police", "unified"
     seed: int = 42
 
 class AssignRequest(BaseModel):
     incident_id: str
     vehicle_id: str
+    scenario: str = "medical"
     seed: int = 42
 
 class AIChatRequest(BaseModel):
     query: str
-    seed: int = 42
+    scenario: str = "medical"
     strategy: str = "sathi"
+    seed: int = 42
 
 @app.get("/api/health")
 def health_check():
     return {
         "status": "online",
-        "system": "SATHI – Intelligent Emergency Fleet Dispatcher",
+        "system": "SATHI – Multi-Agency Intelligent Fleet Dispatcher",
         "tagline": "Always There When It Matters",
-        "version": "2.0.0"
+        "version": "4.0.0"
     }
 
 @app.post("/api/simulate", response_model=SimulationResult)
 def run_simulation(req: SimulateRequest):
     if req.strategy not in ("sathi", "greedy"):
         raise HTTPException(status_code=400, detail="Strategy must be 'sathi' or 'greedy'")
-    
-    engine = SimulationEngine(strategy=req.strategy, seed=req.seed)
+    if req.scenario not in ("medical", "fire", "police", "unified"):
+        raise HTTPException(status_code=400, detail="Invalid scenario type")
+        
+    engine = SimulationEngine(strategy=req.strategy, scenario=req.scenario, seed=req.seed)
     result = engine.run()
     return result
 
 @app.post("/api/battle")
 def run_battle_mode(req: SimulateRequest):
-    sathi_engine = SimulationEngine(strategy="sathi", seed=req.seed)
+    sathi_engine = SimulationEngine(strategy="sathi", scenario=req.scenario, seed=req.seed)
     sathi_res = sathi_engine.run()
     
-    greedy_engine = SimulationEngine(strategy="greedy", seed=req.seed)
+    greedy_engine = SimulationEngine(strategy="greedy", scenario=req.scenario, seed=req.seed)
     greedy_res = greedy_engine.run()
     
     return {
+        "scenario": req.scenario,
         "seed": req.seed,
         "sathi": sathi_res,
         "greedy": greedy_res,
@@ -84,13 +90,14 @@ def run_battle_mode(req: SimulateRequest):
 
 @app.post("/api/compare")
 def compare_strategies(req: SimulateRequest):
-    sathi_engine = SimulationEngine(strategy="sathi", seed=req.seed)
+    sathi_engine = SimulationEngine(strategy="sathi", scenario=req.scenario, seed=req.seed)
     sathi_res = sathi_engine.run()
     
-    greedy_engine = SimulationEngine(strategy="greedy", seed=req.seed)
+    greedy_engine = SimulationEngine(strategy="greedy", scenario=req.scenario, seed=req.seed)
     greedy_res = greedy_engine.run()
     
     return {
+        "scenario": req.scenario,
         "seed": req.seed,
         "sathi": {
             "metrics": sathi_res.metrics,
@@ -117,18 +124,13 @@ def compare_strategies(req: SimulateRequest):
 
 @app.post("/api/assign")
 def test_override_assignment(req: AssignRequest):
-    base_engine = SimulationEngine(strategy="sathi", seed=req.seed)
+    base_engine = SimulationEngine(strategy="sathi", scenario=req.scenario, seed=req.seed)
     base_res = base_engine.run()
     
     orig_decision = next((d for d in base_res.decisions if d.incident_id == req.incident_id), None)
     orig_v_id = orig_decision.vehicle_id if orig_decision else "None"
     
-    incidents = generate_incidents(count=100, seed=req.seed)
-    target_inc = next((inc for inc in incidents if inc.id == req.incident_id), None)
-    if not target_inc:
-        raise HTTPException(status_code=404, detail=f"Incident {req.incident_id} not found")
-        
-    override_engine = SimulationEngine(strategy="sathi", seed=req.seed)
+    override_engine = SimulationEngine(strategy="sathi", scenario=req.scenario, seed=req.seed)
     override_res = override_engine.run()
     
     resp_delta = round(override_res.metrics.priority_weighted_response_time - base_res.metrics.priority_weighted_response_time, 2)
@@ -136,6 +138,7 @@ def test_override_assignment(req: AssignRequest):
     
     return {
         "incident_id": req.incident_id,
+        "scenario": req.scenario,
         "original_vehicle": orig_v_id,
         "override_vehicle": req.vehicle_id,
         "impact": {
@@ -150,72 +153,64 @@ def test_override_assignment(req: AssignRequest):
 @app.post("/api/ai-chat")
 def ai_assistant_query(req: AIChatRequest):
     query_lower = req.query.lower()
-    engine = SimulationEngine(strategy=req.strategy, seed=req.seed)
+    engine = SimulationEngine(strategy=req.strategy, scenario=req.scenario, seed=req.seed)
     res = engine.run()
     m = res.metrics
     
-    if "vehicle" in query_lower or "chosen" in query_lower or "why" in query_lower:
-        latest_d = res.decisions[0] if res.decisions else None
-        if latest_d:
-            answer = (
-                f"SATHI selects vehicles using a multi-factor score (Distance + Traffic Factor + Coverage Risk Penalty - Capacity Sharing Bonus). "
-                f"For incident {latest_d.incident_id} (P{latest_d.priority}), {latest_d.vehicle_name} was chosen. {latest_d.explanation}"
-            )
-        else:
-            answer = "SATHI enforces the Last Vehicle Protection Rule to protect quadrant coverage while optimizing travel distance and traffic delays."
-            
-    elif "coverage" in query_lower or "drop" in query_lower or "outage" in query_lower or "rebalance" in query_lower:
+    if "fire" in query_lower or "water" in query_lower or "hydrant" in query_lower:
         answer = (
-            f"Coverage drops occur when a quadrant has 0 available idle ambulances. "
-            f"SATHI enforces the Last Vehicle Protection Rule and automatically dispatches rebalancing moves ({m.rebalance_moves_count} moves executed) from surplus quadrants to weak quadrants."
+            f"SATHI Fire & Rescue Command monitors 20 Fire Engines (Pumper, Ladder, Tanker) and 4 Hydrant Refill Stations. "
+            f"When water levels drop below 20%, engines automatically route to the nearest Hydrant Station. Refill operations: {m.refill_operations_count}."
         )
-        
-    elif "traffic" in query_lower or "slow" in query_lower or "zone" in query_lower:
+    elif "police" in query_lower or "swat" in query_lower or "threat" in query_lower:
         answer = (
-            f"SATHI monitors real-time Traffic Congestion Zones (red zones reduce travel speed by 50%). "
-            f"During the current run, SATHI encountered {m.traffic_delays_encountered} traffic delay events."
+            f"SATHI Police Tactical Command dispatches Patrol Cruisers, SWAT Tactical Vans, and Interceptors. "
+            f"Threat Level T3 emergencies (active shooter/hostage) trigger exclusive SWAT deployment and perimeter cordoning."
         )
-        
-    elif "capacity" in query_lower or "share" in query_lower or "slot" in query_lower:
+    elif "unified" in query_lower or "multi" in query_lower:
         answer = (
-            f"Each ambulance has 2 capacity slots. P3 critical incidents require exclusive full locks (2 slots). "
-            f"P1 & P2 incidents share capacity up to 2 patients, allowing dynamic on-the-fly re-routing."
+            f"SATHI Unified Master Command manages 60 combined units across EMS, Fire & Rescue, and Police Tactical. "
+            f"It handles complex multi-agency disasters (e.g. major crash requiring Ambulance + Fire Engine + Police Cruiser simultaneously)."
+        )
+    elif "coverage" in query_lower or "outage" in query_lower or "rebalance" in query_lower:
+        answer = (
+            f"Coverage preservation enforces Last Vehicle Protection and dispatches automated rebalancing transfers ({m.rebalance_moves_count} moves executed)."
         )
     else:
         answer = (
-            f"SATHI ('Always There When It Matters') v2.0 is running '{req.strategy.upper()}' strategy on seed {req.seed}. "
-            f"Telemetry: Weighted response time: {m.priority_weighted_response_time}m, Coverage Outages: {m.coverage_outage_minutes}m, "
-            f"P3 Avg Response: {m.avg_p3_response_time}m, Rebalance Moves: {m.rebalance_moves_count}."
+            f"SATHI v4.0 Multi-Agency Dispatcher running '{req.scenario.upper()}' scenario under '{req.strategy.upper()}' strategy. "
+            f"Weighted Response Time: {m.priority_weighted_response_time}m, Coverage Outages: {m.coverage_outage_minutes}m, "
+            f"P3 Avg Response: {m.avg_p3_response_time}m."
         )
 
     return {
         "query": req.query,
         "answer": answer,
         "context_summary": {
+            "scenario": req.scenario,
             "strategy": req.strategy,
             "weighted_response_time": m.priority_weighted_response_time,
             "outage_minutes": m.coverage_outage_minutes,
-            "rebalance_moves": m.rebalance_moves_count,
-            "p3_avg_resp": m.avg_p3_response_time
+            "rebalance_moves": m.rebalance_moves_count
         }
     }
 
 @app.get("/api/export/csv")
-def export_csv(strategy: str = "sathi", seed: int = 42):
-    engine = SimulationEngine(strategy=strategy, seed=seed)
+def export_csv(strategy: str = "sathi", scenario: str = "medical", seed: int = 42):
+    engine = SimulationEngine(strategy=strategy, scenario=scenario, seed=seed)
     res = engine.run()
     
     output = io.StringIO()
     writer = csv.writer(output)
     
     writer.writerow([
-        "Step", "Incident_ID", "Priority", "Vehicle_ID", "Vehicle_Name",
+        "Step", "Incident_ID", "Agency", "Priority", "Vehicle_ID", "Vehicle_Name",
         "Distance_Units", "Dispatch_Score", "Coverage_Override", "Explanation"
     ])
     
     for d in res.decisions:
         writer.writerow([
-            d.step, d.incident_id, d.priority, d.vehicle_id, d.vehicle_name,
+            d.step, d.incident_id, d.agency, d.priority, d.vehicle_id, d.vehicle_name,
             d.distance, d.score, d.coverage_override, d.explanation.replace("\n", " ")
         ])
         
@@ -223,10 +218,9 @@ def export_csv(strategy: str = "sathi", seed: int = 42):
     return StreamingResponse(
         io.BytesIO(output.getvalue().encode('utf-8')),
         media_type="text/csv",
-        headers={"Content-Disposition": f"attachment; filename=sathi_dispatch_log_seed_{seed}.csv"}
+        headers={"Content-Disposition": f"attachment; filename=sathi_{scenario}_dispatch_log.csv"}
     )
 
-# 🌐 SERVE FRONTEND BUILD AT ROOT
 frontend_dist = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "frontend", "dist"))
 if os.path.exists(frontend_dist):
     assets_dir = os.path.join(frontend_dist, "assets")

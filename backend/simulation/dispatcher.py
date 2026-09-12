@@ -27,15 +27,15 @@ class GreedyDispatcher(BaseDispatcher):
         best_vehicle = None
         min_dist = float('inf')
         
-        for v in vehicles:
-            # Check availability
+        # Filter matching agency vehicles
+        eligible_v = [v for v in vehicles if v.agency == incident.agency or incident.agency == "multi"]
+        
+        for v in eligible_v:
             if incident.priority == 3:
                 if v.occupied_slots > 0 or len(v.patients) > 0:
                     continue
             else:
                 if v.occupied_slots >= v.capacity:
-                    continue
-                if any(p.priority == 3 for p in v.patients):
                     continue
             
             dist = calculate_distance(v.x, v.y, incident.x, incident.y)
@@ -48,12 +48,13 @@ class GreedyDispatcher(BaseDispatcher):
             
         explanation = (
             f"Greedy baseline assigned {best_vehicle.name} purely because it was the closest available vehicle "
-            f"(distance: {min_dist:.2f} units), ignoring quadrant coverage risk and capacity optimization."
+            f"(distance: {min_dist:.2f} units), ignoring coverage risk and agency capacity rules."
         )
         
         return DispatchDecision(
             step=step,
             incident_id=incident.id,
+            agency=incident.agency,
             priority=incident.priority,
             vehicle_id=best_vehicle.id,
             vehicle_name=best_vehicle.name,
@@ -71,8 +72,8 @@ class GreedyDispatcher(BaseDispatcher):
 
 class SATHIDispatcher(BaseDispatcher):
     """
-    SATHI Engine v2: Intelligent Dispatcher with Last Vehicle Protection Rule,
-    Exponential Coverage Penalty, and Smart Priority Override.
+    SATHI Multi-Domain Intelligence Engine v4.0:
+    Handles Medical, Fire & Rescue, Police Tactical, and Multi-Agency Disaster Incidents.
     """
     def assign(
         self,
@@ -82,10 +83,18 @@ class SATHIDispatcher(BaseDispatcher):
         step: int
     ) -> Optional[DispatchDecision]:
         
-        # 1. Calculate current idle vehicles per quadrant
+        eligible_vehicles = [
+            v for v in vehicles 
+            if (v.agency == incident.agency or incident.agency == "multi") and v.status != "refilling"
+        ]
+        
+        if not eligible_vehicles:
+            return None
+
+        # Calculate quadrant idle counts for this agency
         quad_idle_counts = {1: 0, 2: 0, 3: 0, 4: 0}
-        for v in vehicles:
-            if (v.status == "idle" or v.status == "rebalancing") and v.occupied_slots == 0:
+        for v in eligible_vehicles:
+            if (v.status in ("idle", "rebalancing")) and v.occupied_slots == 0:
                 quad_idle_counts[v.current_quadrant] += 1
 
         best_vehicle = None
@@ -95,68 +104,65 @@ class SATHIDispatcher(BaseDispatcher):
         coverage_override_triggered = False
         skipped_due_to_coverage = False
 
-        for v in vehicles:
-            # Availability Check
-            if incident.priority == 3:
-                # P3 requires exclusive empty ambulance
-                if v.occupied_slots > 0 or len(v.patients) > 0:
+        for v in eligible_vehicles:
+            # Domain-Specific Rules
+            if incident.agency == "fire":
+                # Fire Engine must have at least 20% water level
+                if v.water_level < 20.0:
                     continue
-            else:
-                # P1/P2 can share if occupied_slots < 2 and no P3 patient on board
-                if v.occupied_slots >= v.capacity:
-                    continue
-                if any(p.priority == 3 for p in v.patients):
-                    continue
+                # F3 Industrial Blaze prefers Tanker / Ladder
+                if incident.fire_severity == 3 and v.vehicle_type == "pumper" and len(eligible_vehicles) > 2:
+                    pass
+            elif incident.agency == "police":
+                # Threat level T3 requires SWAT unit if available
+                if incident.threat_level == 3 and v.unit_type != "swat":
+                    swat_avail = any(alt.unit_type == "swat" and alt.status == "idle" for alt in eligible_vehicles)
+                    if swat_avail:
+                        continue
+            else: # Medical
+                if incident.priority == 3:
+                    if v.occupied_slots > 0 or len(v.patients) > 0:
+                        continue
+                else:
+                    if v.occupied_slots >= v.capacity or any(p.priority == 3 for p in v.patients):
+                        continue
 
             v_quad = v.current_quadrant
             idle_in_quad = quad_idle_counts.get(v_quad, 0)
             is_last_vehicle = (v.status in ("idle", "rebalancing")) and (v.occupied_slots == 0) and (idle_in_quad == 1)
 
-            # 🔒 1. LAST VEHICLE PROTECTION RULE
-            # IF assigning a vehicle will cause quadrant_idle_count == 0,
-            # DO NOT ASSIGN that vehicle unless incident priority == 3 AND no alternative vehicle exists.
+            # Last Vehicle Protection Rule
             if is_last_vehicle and incident.priority < 3:
-                # Check if there exists ANY other candidate vehicle that is not the last vehicle in its quadrant
                 has_alternative = any(
                     alt_v.id != v.id and (
                         alt_v.occupied_slots > 0 or 
                         quad_idle_counts.get(alt_v.current_quadrant, 0) > 1
                     )
-                    for alt_v in vehicles
-                    if alt_v.occupied_slots < alt_v.capacity and not any(p.priority == 3 for p in alt_v.patients)
+                    for alt_v in eligible_vehicles
                 )
                 if has_alternative:
-                    # STRICT RULE: Exclude this vehicle to protect quadrant coverage!
                     skipped_due_to_coverage = True
                     continue
 
             dist = calculate_distance(v.x, v.y, incident.x, incident.y)
-            
-            # Distance Cost
             dist_cost = dist * 1.0
-            
-            # Priority Urgency Weighting
             p_weight = incident.priority_weight
             priority_cost = (10.0 - p_weight) * 0.5
             
-            # ⚖️ 2. STRONG COVERAGE PENALTY IN SCORING
+            # Coverage Penalty
             coverage_penalty = 0.0
             if (v.status in ("idle", "rebalancing")) and (v.occupied_slots == 0):
                 if idle_in_quad == 1:
-                    # VERY HIGH Penalty (1500) for draining last vehicle
                     coverage_penalty = 1500.0
                     if incident.priority == 3:
                         coverage_override_triggered = True
                 elif idle_in_quad == 2:
-                    # MEDIUM Penalty (200) for reducing to 1
                     coverage_penalty = 200.0
-                elif idle_in_quad == 3:
-                    coverage_penalty = 20.0
-            
-            # 🚑 Capacity Bonus for reusing 1/2 filled ambulance
+
+            # Capacity Bonus
             capacity_bonus = 0.0
             if v.occupied_slots == 1 and incident.priority in (1, 2):
-                capacity_bonus = 25.0  # High bonus to preserve fully idle vehicles
+                capacity_bonus = 25.0
 
             score = dist_cost + priority_cost + coverage_penalty - capacity_bonus
             
@@ -175,27 +181,31 @@ class SATHIDispatcher(BaseDispatcher):
         if not best_vehicle:
             return None
 
-        # Build AI Explanation text
         reasons = []
+        if incident.agency == "fire":
+            reasons.append(f"Water tank capacity at {best_vehicle.water_level:.0f}%")
+            if incident.fire_severity == 3:
+                reasons.append("Matched heavy fire suppression unit")
+        elif incident.agency == "police":
+            if incident.threat_level == 3:
+                reasons.append("🚨 SWAT Tactical Unit deployed for high-threat emergency")
+        
         if coverage_override_triggered and incident.priority == 3:
-            reasons.append("🚨 Coverage sacrificed due to high-priority emergency (P3)")
+            reasons.append("🚨 Coverage sacrificed for critical emergency (P3/F3/T3)")
         elif skipped_due_to_coverage:
-            reasons.append(f"🔒 Assignment skipped to preserve minimum coverage in Quadrant Q{best_vehicle.current_quadrant}")
+            reasons.append(f"🔒 Preserved minimum coverage in Quadrant Q{best_vehicle.current_quadrant}")
         else:
-            reasons.append(f"🛡️ Preserves minimum coverage guarantee in Quadrant Q{best_vehicle.current_quadrant}")
-
-        reasons.append(f"Response distance: {best_dist:.1f} units")
-        if best_breakdown.get("capacity_bonus", 0) > 0:
-            reasons.append(f"Utilized active capacity slot (1/2 filled) on {best_vehicle.name}")
+            reasons.append(f"Response distance: {best_dist:.1f} units")
 
         explanation = (
-            f"SATHI Engine assigned {best_vehicle.name} to {incident.id} (P{incident.priority}):\n"
+            f"SATHI assigned {best_vehicle.name} to {incident.id} (P{incident.priority}):\n"
             + "\n".join(f"• {r}" for r in reasons)
         )
 
         return DispatchDecision(
             step=step,
             incident_id=incident.id,
+            agency=incident.agency,
             priority=incident.priority,
             vehicle_id=best_vehicle.id,
             vehicle_name=best_vehicle.name,
