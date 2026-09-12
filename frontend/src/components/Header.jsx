@@ -49,6 +49,12 @@ export default function Header({
         {/* Tab Navigation */}
         <div className="flex items-center bg-[#0B0F19] p-1 rounded-xl border border-slate-800 text-xs font-medium font-mono">
           <button
+            onClick={() => setActiveTab('manual')}
+            className={`px-3 py-1.5 rounded-lg transition-all ${activeTab === 'manual' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow' : 'text-slate-400 hover:text-slate-200'}`}
+          >
+            Manual
+          </button>
+          <button
             onClick={() => setActiveTab('sim')}
             className={`px-3 py-1.5 rounded-lg transition-all ${activeTab === 'sim' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow' : 'text-slate-400 hover:text-slate-200'}`}
           >

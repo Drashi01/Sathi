@@ -1,5 +1,5 @@
 import React from 'react';
-import { Shield, Sparkles, Activity, Lock, Users, AlertTriangle, Swords, ArrowRight, Zap } from 'lucide-react';
+import { Shield, Sparkles, Activity, Lock, Users, AlertTriangle, Swords, ArrowRight, Zap, BookOpen } from 'lucide-react';
 import { sounds } from '../audio/soundEffects';
 
 export default function HomePage({ setActivePage, onStartSim }) {
@@ -22,7 +22,14 @@ export default function HomePage({ setActivePage, onStartSim }) {
             “Always There When It Matters.” A real-time, causal municipal emergency fleet manager featuring <span className="text-cyan-400 font-bold">Last Vehicle Protection</span>, <span className="text-emerald-400 font-bold">Dual-Slot Capacity Optimization</span>, and <span className="text-amber-400 font-bold">Traffic-Aware Dynamic Re-routing</span>.
           </p>
 
-          <div className="flex flex-wrap items-center gap-4 pt-4">
+          <div className="flex flex-wrap items-center gap-3 pt-4">
+            <button
+              onClick={() => setActivePage('manual')}
+              className="px-5 py-3 rounded-2xl bg-cyan-950/90 border border-cyan-500/50 text-cyan-300 font-bold text-xs uppercase tracking-wider flex items-center gap-2 hover:bg-cyan-900/60 shadow-lg shadow-cyan-500/20 active:scale-95 transition"
+            >
+              <BookOpen className="w-4 h-4 text-cyan-400" /> Read Project Manual
+            </button>
+
             <button
               onClick={() => {
                 onStartSim();
@@ -30,14 +37,14 @@ export default function HomePage({ setActivePage, onStartSim }) {
               }}
               className="px-6 py-3 rounded-2xl bg-gradient-to-r from-cyan-500 via-teal-400 to-blue-600 text-slate-950 font-extrabold text-xs uppercase tracking-wider flex items-center gap-2 shadow-lg shadow-cyan-500/30 hover:brightness-110 active:scale-95 transition"
             >
-              <Activity className="w-4 h-4" /> Start SATHI Simulation
+              <Activity className="w-4 h-4" /> Start Simulation
             </button>
 
             <button
               onClick={() => setActivePage('battle')}
-              className="px-6 py-3 rounded-2xl bg-[#0B0F19] border border-slate-700 text-slate-200 font-bold text-xs uppercase tracking-wider flex items-center gap-2 hover:border-cyan-500/50 transition"
+              className="px-5 py-3 rounded-2xl bg-[#0B0F19] border border-slate-700 text-slate-200 font-bold text-xs uppercase tracking-wider flex items-center gap-2 hover:border-cyan-500/50 transition"
             >
-              <Swords className="w-4 h-4 text-cyan-400" /> Launch Strategy Battle
+              <Swords className="w-4 h-4 text-cyan-400" /> Strategy Battle
             </button>
           </div>
         </div>
@@ -110,6 +117,30 @@ export default function HomePage({ setActivePage, onStartSim }) {
           <span className="text-[10px] text-purple-400 font-bold mt-4">Proactive Fleet Dispatch</span>
         </div>
 
+      </div>
+
+      {/* New to SATHI Onboarding Banner */}
+      <div className="p-6 rounded-3xl bg-gradient-to-r from-cyan-950/40 via-[#0D1322] to-blue-950/40 border border-cyan-500/30 flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 rounded-2xl bg-cyan-950 text-cyan-400 border border-cyan-800 flex items-center justify-center shrink-0 shadow-lg shadow-cyan-500/20">
+            <BookOpen className="w-6 h-6" />
+          </div>
+          <div>
+            <h3 className="text-sm font-bold font-mono text-slate-100 flex items-center gap-2">
+              New to SATHI? Explore the Interactive Manual
+            </h3>
+            <p className="text-xs text-slate-400 font-sans mt-0.5">
+              Learn how the mathematical scoring engine works, test dual-slot capacity simulation, and master live simulation controls in ~4 minutes.
+            </p>
+          </div>
+        </div>
+
+        <button
+          onClick={() => setActivePage('manual')}
+          className="px-5 py-2.5 rounded-xl bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 font-mono text-xs font-bold hover:bg-cyan-500/30 active:scale-95 transition flex items-center gap-2 shrink-0"
+        >
+          Open Manual <ArrowRight className="w-4 h-4" />
+        </button>
       </div>
     </div>
   );

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Home, Activity, BarChart3, Swords, Sliders, Bot, Shield, Sparkles, Flame, Siren, Zap, Truck } from 'lucide-react';
+import { Home, Activity, BarChart3, Swords, Sliders, Bot, Shield, Sparkles, Flame, Siren, Zap, Truck, BookOpen } from 'lucide-react';
 
 export default function Sidebar({ activePage, setActivePage, scenario, setScenario }) {
   const scenarios = [
@@ -11,6 +11,7 @@ export default function Sidebar({ activePage, setActivePage, scenario, setScenar
 
   const navItems = [
     { id: 'home', label: 'Home Overview', icon: Home },
+    { id: 'manual', label: 'Project Manual', icon: BookOpen },
     { id: 'sim', label: 'Live Dispatch Grid', icon: Activity },
     { id: 'analytics', label: 'Analytics Dashboard', icon: BarChart3 },
     { id: 'battle', label: 'Strategy Battle', icon: Swords },

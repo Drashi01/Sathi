@@ -11,6 +11,7 @@ import ControlBar from './components/ControlBar';
 import CriticalAlertBanner from './components/CriticalAlertBanner';
 
 import HomePage from './pages/HomePage';
+import ManualPage from './pages/ManualPage';
 import AnalyticsPage from './pages/AnalyticsPage';
 import BattlePage from './pages/BattlePage';
 import WhatIfPage from './pages/WhatIfPage';
@@ -128,6 +129,14 @@ export default function App() {
               {activePage === 'home' && (
                 <HomePage
                   setActivePage={setActivePage}
+                  onStartSim={() => setIsPlaying(true)}
+                />
+              )}
+
+              {activePage === 'manual' && (
+                <ManualPage
+                  setActivePage={setActivePage}
+                  setScenario={setScenario}
                   onStartSim={() => setIsPlaying(true)}
                 />
               )}
