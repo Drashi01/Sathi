@@ -1,5 +1,5 @@
 import React from 'react';
-import { Shield, Play, Pause, Volume2, VolumeX, Sparkles, RefreshCw, Layers } from 'lucide-react';
+import { Shield, Play, Pause, Volume2, VolumeX, Sparkles, Camera } from 'lucide-react';
 import { sounds } from '../audio/soundEffects';
 
 export default function Header({
@@ -10,6 +10,8 @@ export default function Header({
   resetSim,
   audioEnabled,
   setAudioEnabled,
+  cinematicMode,
+  setCinematicMode,
   activeTab,
   setActiveTab
 }) {
@@ -35,7 +37,7 @@ export default function Header({
                 SATHI
               </h1>
               <span className="px-2 py-0.5 text-[10px] font-bold tracking-widest uppercase rounded bg-cyan-950 text-cyan-400 border border-cyan-800">
-                v1.0 MVP
+                v3.0 MVP
               </span>
             </div>
             <p className="text-xs text-slate-400 font-medium">
@@ -45,18 +47,24 @@ export default function Header({
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex items-center bg-[#0B0F19] p-1 rounded-xl border border-slate-800 text-xs font-medium">
+        <div className="flex items-center bg-[#0B0F19] p-1 rounded-xl border border-slate-800 text-xs font-medium font-mono">
           <button
-            onClick={() => setActiveTab('grid')}
-            className={`px-3 py-1.5 rounded-lg transition-all ${activeTab === 'grid' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow' : 'text-slate-400 hover:text-slate-200'}`}
+            onClick={() => setActiveTab('sim')}
+            className={`px-3 py-1.5 rounded-lg transition-all ${activeTab === 'sim' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow' : 'text-slate-400 hover:text-slate-200'}`}
           >
-            Live Dispatch Grid
+            Live Grid
           </button>
           <button
-            onClick={() => setActiveTab('comparison')}
-            className={`px-3 py-1.5 rounded-lg transition-all ${activeTab === 'comparison' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow' : 'text-slate-400 hover:text-slate-200'}`}
+            onClick={() => setActiveTab('battle')}
+            className={`px-3 py-1.5 rounded-lg transition-all ${activeTab === 'battle' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow' : 'text-slate-400 hover:text-slate-200'}`}
           >
-            Strategy Comparison
+            Strategy Battle
+          </button>
+          <button
+            onClick={() => setActiveTab('analytics')}
+            className={`px-3 py-1.5 rounded-lg transition-all ${activeTab === 'analytics' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow' : 'text-slate-400 hover:text-slate-200'}`}
+          >
+            Analytics
           </button>
           <button
             onClick={() => setActiveTab('whatif')}
@@ -68,29 +76,18 @@ export default function Header({
 
         {/* Action Controls */}
         <div className="flex items-center gap-3">
-          {/* Strategy Selector */}
-          <div className="flex items-center bg-[#0B0F19] p-1 rounded-lg border border-slate-800 text-xs">
-            <button
-              onClick={() => setStrategy('sathi')}
-              className={`px-2.5 py-1 rounded-md font-semibold transition ${
-                strategy === 'sathi'
-                  ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              SATHI Engine
-            </button>
-            <button
-              onClick={() => setStrategy('greedy')}
-              className={`px-2.5 py-1 rounded-md font-semibold transition ${
-                strategy === 'greedy'
-                  ? 'bg-amber-600 text-white shadow'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              Greedy Baseline
-            </button>
-          </div>
+          {/* Cinematic Mode Toggle */}
+          <button
+            onClick={() => setCinematicMode(!cinematicMode)}
+            className={`px-3 py-1.5 rounded-xl border text-xs font-mono font-bold flex items-center gap-1.5 transition ${
+              cinematicMode
+                ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white border-purple-400 shadow-neon-cyan animate-pulse'
+                : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Camera className="w-3.5 h-3.5" />
+            Cinematic Mode {cinematicMode ? 'ON' : 'OFF'}
+          </button>
 
           {/* Sound Toggle */}
           <button
@@ -108,7 +105,7 @@ export default function Header({
             {audioEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
           </button>
 
-          {/* Start / Reset Simulation Demo Button */}
+          {/* Start / Pause Button */}
           <button
             onClick={() => {
               if (isPlaying) {
@@ -126,7 +123,7 @@ export default function Header({
               </>
             ) : (
               <>
-                <Sparkles className="w-4 h-4" /> Start SATHI Simulation
+                <Sparkles className="w-4 h-4" /> Start Simulation
               </>
             )}
           </button>

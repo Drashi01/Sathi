@@ -36,7 +36,6 @@ class SimulationEngine:
         self.rebalance_moves_count = 0
         self.traffic_delays_encountered = 0
 
-        # Quadrant Center Coordinates for Rebalancing
         self.quad_centers = {
             1: (25.0, 75.0),
             2: (75.0, 75.0),
@@ -56,6 +55,9 @@ class SimulationEngine:
             # 2. Reveal new incidents arriving at current_time
             new_incidents = [inc for inc in self.incidents if inc.arrival_time == current_time]
             unassigned_queue.extend(new_incidents)
+            
+            # Check for P3 Critical Broadcast
+            p3_new = next((inc for inc in new_incidents if inc.priority == 3), None)
             
             # Sort unassigned queue: Priority DESC (P3=7, P2=3, P1=1), Arrival ASC
             unassigned_queue.sort(key=lambda x: (-x.priority_weight, x.arrival_time))
@@ -113,7 +115,6 @@ class SimulationEngine:
                     v.occupied_slots = len(v.patients)
                     v.total_dispatches += 1
                     
-                    # Intercept any active rebalancing
                     v.is_rebalancing = False
                     v.rebalance_target_quadrant = None
                     
@@ -128,10 +129,15 @@ class SimulationEngine:
             for inc in assigned_this_step:
                 unassigned_queue.remove(inc)
 
-            # 5. 🔄 AUTOMATED QUADRANT REBALANCING LOGIC (SATHI Engine Only)
+            # 5. Automated Quadrant Rebalancing Logic
             step_rebalance_notes = []
             if self.strategy_name == "sathi":
                 step_rebalance_notes = self._trigger_rebalancing(quad_idle_counts)
+
+            # Check if any P3 decision happened this step
+            p3_dispatched = next((d for d in recent_step_decisions if d.priority == 3), None)
+            is_crit_broadcast = (p3_new is not None) or (p3_dispatched is not None)
+            crit_inc_obj = p3_new or (incident_map.get(p3_dispatched.incident_id) if p3_dispatched else None)
 
             # 6. Take Step Snapshot for UI Animation
             snapshot_vehicles = [v.model_copy(deep=True) for v in self.vehicles]
@@ -147,6 +153,8 @@ class SimulationEngine:
                     recent_decisions=recent_step_decisions,
                     traffic_zones=self.traffic_zones,
                     rebalance_events=step_rebalance_notes,
+                    is_critical_broadcast=is_crit_broadcast,
+                    broadcast_incident=crit_inc_obj,
                     outage_active=is_outage
                 )
             )
@@ -169,14 +177,13 @@ class SimulationEngine:
 
     def _trigger_rebalancing(self, quad_idle_counts: Dict[int, int]) -> List[str]:
         notes = []
-        # Find weak quadrants (idle_vehicles <= 1, prioritized 0-idle outages first)
         weak_quads = [q_id for q_id, count in sorted(quad_idle_counts.items(), key=lambda x: x[1]) if count <= 1]
         surplus_quads = [q_id for q_id, count in quad_idle_counts.items() if count >= 2]
 
         if weak_quads and surplus_quads:
             for w_quad in weak_quads:
                 if quad_idle_counts[w_quad] >= 1 and any(quad_idle_counts[q] == 0 for q in weak_quads):
-                    continue  # prioritize 0-idle outage quadrants first
+                    continue
                 
                 best_v = None
                 min_dist = float('inf')
@@ -227,7 +234,6 @@ class SimulationEngine:
                 v.status = "idle"
                 continue
 
-            # Movement towards target
             if v.target_x is not None and v.target_y is not None:
                 dist = calculate_distance(v.x, v.y, v.target_x, v.target_y)
                 move_dist = v.current_speed
@@ -236,7 +242,6 @@ class SimulationEngine:
                     v.x = v.target_x
                     v.y = v.target_y
                     
-                    # If rebalancing reached target center
                     if v.is_rebalancing:
                         v.is_rebalancing = False
                         v.rebalance_target_quadrant = None
@@ -260,7 +265,6 @@ class SimulationEngine:
                     v.x += dx * move_dist
                     v.y += dy * move_dist
 
-            # Servicing patient countdowns
             completed_patients = []
             for p in v.patients:
                 if p.status == "servicing":

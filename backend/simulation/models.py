@@ -21,8 +21,8 @@ class TrafficZone(BaseModel):
     x_max: float
     y_min: float
     y_max: float
-    speed_factor: float = 0.4  # Speed multiplier in high traffic (e.g. 0.4x)
-    severity: str = "high"     # "high" (Red), "medium" (Yellow)
+    speed_factor: float = 0.4
+    severity: str = "high"
 
 class VehicleState(BaseModel):
     id: str
@@ -106,6 +106,8 @@ class StepSnapshot(BaseModel):
     recent_decisions: List[DispatchDecision]
     traffic_zones: List[TrafficZone] = Field(default_factory=list)
     rebalance_events: List[str] = Field(default_factory=list)
+    is_critical_broadcast: bool = False
+    broadcast_incident: Optional[IncidentState] = None
     outage_active: bool
 
 class SimulationResult(BaseModel):

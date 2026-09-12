@@ -1,10 +1,15 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Eye, Activity, AlertTriangle, TrafficCone, Compass } from 'lucide-react';
+import { Eye, Activity, AlertTriangle, TrafficCone, Compass, Camera, Truck, Users, Clock } from 'lucide-react';
 
-export default function LiveGrid({ snapshot, currentStep }) {
+export default function LiveGrid({ snapshot, currentStep, cinematicMode, toggleCinematicMode }) {
   const canvasRef = useRef(null);
   const [showHeatmap, setShowHeatmap] = useState(false);
   const [showTraffic, setShowTraffic] = useState(true);
+  const [hoveredVehicle, setHoveredVehicle] = useState(null);
+  const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
+
+  // Camera Interpolation State for Cinematic Mode
+  const cameraRef = useRef({ x: 0, y: 0, zoom: 1 });
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -12,10 +17,6 @@ export default function LiveGrid({ snapshot, currentStep }) {
     const ctx = canvas.getContext('2d');
     const width = canvas.width;
     const height = canvas.height;
-    
-    // Clear canvas
-    ctx.fillStyle = '#090D16';
-    ctx.fillRect(0, 0, width, height);
 
     const scaleX = width / 100;
     const scaleY = height / 100;
@@ -23,7 +24,55 @@ export default function LiveGrid({ snapshot, currentStep }) {
     const toCanvasX = (x) => x * scaleX;
     const toCanvasY = (y) => (100 - y) * scaleY;
 
-    // 1. Draw Heatmap if enabled
+    // 🎥 Calculate Cinematic Camera Target
+    let targetX = 0;
+    let targetY = 0;
+    let targetZoom = 1.0;
+
+    if (cinematicMode) {
+      // Find active P3 incident or active moving vehicle to focus on
+      const p3Inc = snapshot.incidents.find(i => i.priority === 3 && i.status !== 'completed');
+      const busyVeh = snapshot.vehicles.find(v => v.status === 'moving' || v.status === 'busy' || v.status === 'rebalancing');
+
+      if (p3Inc) {
+        targetX = toCanvasX(p3Inc.x);
+        targetY = toCanvasY(p3Inc.y);
+        targetZoom = 1.8;
+      } else if (busyVeh) {
+        targetX = toCanvasX(busyVeh.x);
+        targetY = toCanvasY(busyVeh.y);
+        targetZoom = 1.4;
+      } else {
+        targetX = width / 2;
+        targetY = height / 2;
+        targetZoom = 1.0;
+      }
+    } else {
+      targetX = width / 2;
+      targetY = height / 2;
+      targetZoom = 1.0;
+    }
+
+    // Smoothly interpolate camera position
+    const cam = cameraRef.current;
+    cam.zoom += (targetZoom - cam.zoom) * 0.1;
+    cam.x += (targetX - cam.x) * 0.1;
+    cam.y += (targetY - cam.y) * 0.1;
+
+    ctx.save();
+
+    // Apply Camera Transform if Cinematic Mode active
+    if (cinematicMode && cam.zoom > 1.05) {
+      ctx.translate(width / 2, height / 2);
+      ctx.scale(cam.zoom, cam.zoom);
+      ctx.translate(-cam.x, -cam.y);
+    }
+
+    // Clear Canvas
+    ctx.fillStyle = '#090D16';
+    ctx.fillRect(0, 0, width, height);
+
+    // 1. Heatmap
     if (showHeatmap) {
       snapshot.incidents.forEach(inc => {
         const cx = toCanvasX(inc.x);
@@ -39,7 +88,7 @@ export default function LiveGrid({ snapshot, currentStep }) {
       });
     }
 
-    // 🚦 2. Draw TRAFFIC CONGESTION ZONES
+    // 2. Traffic Congestion Zones
     if (showTraffic && snapshot.traffic_zones) {
       snapshot.traffic_zones.forEach(tz => {
         const x1 = toCanvasX(tz.x_min);
@@ -53,7 +102,6 @@ export default function LiveGrid({ snapshot, currentStep }) {
         ctx.fillRect(x1, y1, w, h);
         ctx.strokeRect(x1, y1, w, h);
 
-        // Label
         ctx.fillStyle = '#F87171';
         ctx.font = 'bold 9px "JetBrains Mono", monospace';
         ctx.fillText(`🚦 ${tz.name} (${Math.round((1 - tz.speed_factor)*100)}% DELAY)`, x1 + 6, y1 + 14);
@@ -130,11 +178,12 @@ export default function LiveGrid({ snapshot, currentStep }) {
 
         ctx.setLineDash([4, 4]);
         if (v.status === 'rebalancing') {
-          ctx.strokeStyle = '#A855F7'; // Purple for rebalancing
+          ctx.strokeStyle = '#A855F7';
           ctx.lineWidth = 1.5;
         } else {
-          ctx.strokeStyle = v.patients.some(p => p.priority === 3) ? '#EF4444' : '#00F0FF';
-          ctx.lineWidth = 1.5;
+          const isP3 = v.patients.some(p => p.priority === 3);
+          ctx.strokeStyle = isP3 ? '#EF4444' : '#00F0FF';
+          ctx.lineWidth = isP3 ? 2.5 : 1.5;
         }
 
         ctx.beginPath();
@@ -160,10 +209,11 @@ export default function LiveGrid({ snapshot, currentStep }) {
         color = '#EF4444';
         radius = 9;
 
-        ctx.strokeStyle = 'rgba(239, 68, 68, 0.6)';
-        ctx.lineWidth = 2;
+        // Blinking Red Pulsing Halo
+        ctx.strokeStyle = 'rgba(239, 68, 68, 0.8)';
+        ctx.lineWidth = 2.5;
         ctx.beginPath();
-        ctx.arc(ix, iy, 14 + Math.sin(Date.now() / 200) * 4, 0, Math.PI * 2);
+        ctx.arc(ix, iy, 15 + Math.sin(Date.now() / 150) * 5, 0, Math.PI * 2);
         ctx.stroke();
       }
 
@@ -186,7 +236,7 @@ export default function LiveGrid({ snapshot, currentStep }) {
 
       let color = '#10B981'; // 🟢 Idle
       if (v.status === 'rebalancing') {
-        color = '#A855F7'; // 🟣 Rebalancing
+        color = '#A855F7';
       } else if (v.occupied_slots >= 2 || v.patients.some(p => p.priority === 3)) {
         color = '#EF4444'; // 🔴 Busy/Full
       } else if (v.occupied_slots === 1 || v.status === 'moving') {
@@ -220,7 +270,38 @@ export default function LiveGrid({ snapshot, currentStep }) {
       ctx.fillText(v.status === 'rebalancing' ? '[REBAL]' : `[${v.occupied_slots}/2]`, vx, vy + 22);
     });
 
-  }, [snapshot, showHeatmap, showTraffic]);
+    ctx.restore();
+
+  }, [snapshot, showHeatmap, showTraffic, cinematicMode]);
+
+  // Handle Mouse Move for Vehicle Hover Patient Tooltip
+  const handleMouseMove = (e) => {
+    const canvas = canvasRef.current;
+    if (!canvas || !snapshot) return;
+    const rect = canvas.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+
+    const scaleX = canvas.width / 100;
+    const scaleY = canvas.height / 100;
+
+    let found = null;
+    snapshot.vehicles.forEach(v => {
+      const vx = v.x * scaleX;
+      const vy = (100 - v.y) * scaleY;
+      const dist = Math.hypot(mouseX - vx, mouseY - vy);
+      if (dist <= 16) {
+        found = v;
+      }
+    });
+
+    if (found) {
+      setHoveredVehicle(found);
+      setTooltipPos({ x: mouseX + 15, y: mouseY + 15 });
+    } else {
+      setHoveredVehicle(null);
+    }
+  };
 
   return (
     <div className="bg-[#131B2E] border border-slate-800 rounded-2xl p-4 shadow-2xl relative flex flex-col items-center">
@@ -237,6 +318,18 @@ export default function LiveGrid({ snapshot, currentStep }) {
         </div>
 
         <div className="flex items-center gap-2">
+          {/* 🎥 Cinematic Mode Toggle */}
+          <button
+            onClick={toggleCinematicMode}
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold border transition ${
+              cinematicMode
+                ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white border-purple-400 shadow-neon-cyan animate-pulse'
+                : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-slate-200'
+            }`}
+          >
+            <Camera className="w-3.5 h-3.5" /> Cinematic Camera {cinematicMode ? 'ON' : 'OFF'}
+          </button>
+
           <button
             onClick={() => setShowTraffic(!showTraffic)}
             className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border transition ${
@@ -245,7 +338,7 @@ export default function LiveGrid({ snapshot, currentStep }) {
                 : 'bg-slate-900 text-slate-400 border-slate-800'
             }`}
           >
-            <TrafficCone className="w-3.5 h-3.5" /> Traffic Zones
+            <TrafficCone className="w-3.5 h-3.5" /> Traffic
           </button>
 
           <button
@@ -267,13 +360,57 @@ export default function LiveGrid({ snapshot, currentStep }) {
           ref={canvasRef}
           width={540}
           height={540}
+          onMouseMove={handleMouseMove}
+          onMouseLeave={() => setHoveredVehicle(null)}
           className="cursor-crosshair block"
         />
-        
-        {snapshot?.outage_active && (
-          <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-red-950/90 border border-red-500 text-red-300 px-4 py-1.5 rounded-full text-xs font-bold flex items-center gap-2 animate-pulse shadow-neon-red">
-            <AlertTriangle className="w-4 h-4 text-red-400" />
-            QUADRANT COVERAGE OUTAGE DETECTED!
+
+        {/* 🎬 Cinematic Text Overlay Banner */}
+        {cinematicMode && snapshot?.recent_decisions?.length > 0 && (
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/80 backdrop-blur-md border border-purple-500 text-purple-300 px-4 py-1.5 rounded-full text-xs font-mono font-bold flex items-center gap-2 shadow-2xl animate-bounce">
+            <Camera className="w-4 h-4 text-purple-400" />
+            Dispatching {snapshot.recent_decisions[0].vehicle_name} to {snapshot.recent_decisions[0].incident_id} (P{snapshot.recent_decisions[0].priority})
+          </div>
+        )}
+
+        {/* Floating Patient Intelligence Tooltip */}
+        {hoveredVehicle && (
+          <div
+            style={{ top: tooltipPos.y, left: tooltipPos.x }}
+            className="absolute z-50 bg-[#0B0F19]/95 backdrop-blur-md border border-cyan-500/60 rounded-xl p-3 shadow-2xl text-xs font-mono text-slate-100 min-w-[200px] pointer-events-none"
+          >
+            <div className="flex items-center justify-between border-b border-slate-800 pb-1.5 mb-2">
+              <span className="font-bold text-cyan-300 flex items-center gap-1">
+                <Truck className="w-3.5 h-3.5" /> {hoveredVehicle.name}
+              </span>
+              <span className="text-[10px] text-slate-400">Q{hoveredVehicle.current_quadrant}</span>
+            </div>
+
+            <div className="text-[11px] mb-2 flex items-center justify-between">
+              <span>Slots Occupied:</span>
+              <span className="font-bold text-cyan-400">[{hoveredVehicle.occupied_slots}/2]</span>
+            </div>
+
+            {/* Patients Onboard List */}
+            {hoveredVehicle.patients && hoveredVehicle.patients.length > 0 ? (
+              <div className="space-y-1.5 border-t border-slate-800/80 pt-1.5">
+                <span className="text-[10px] text-slate-400 font-bold uppercase">Patients Onboard:</span>
+                {hoveredVehicle.patients.map((p, idx) => (
+                  <div key={idx} className="flex items-center justify-between bg-[#080B12] p-1.5 rounded text-[10px]">
+                    <span className={`font-bold ${p.priority === 3 ? 'text-red-400' : p.priority === 2 ? 'text-amber-400' : 'text-blue-400'}`}>
+                      Patient {idx + 1} (P{p.priority})
+                    </span>
+                    <span className="text-slate-300 flex items-center gap-1">
+                      <Clock className="w-3 h-3 text-cyan-400" /> {p.service_remaining.toFixed(1)}m left
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-[10px] text-emerald-400 italic border-t border-slate-800/80 pt-1.5">
+                Vehicle Available (0 Patients)
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -296,7 +433,7 @@ export default function LiveGrid({ snapshot, currentStep }) {
         <div className="flex items-center gap-3">
           <span className="text-slate-400 font-bold">ZONES:</span>
           <span className="flex items-center gap-1 text-red-400">
-            <span className="w-2.5 h-2.5 rounded bg-red-500/40 border border-red-500"></span> Red Traffic Zone (50% Speed)
+            <span className="w-2.5 h-2.5 rounded bg-red-500/40 border border-red-500"></span> Red Traffic Corridor
           </span>
         </div>
       </div>

@@ -13,16 +13,16 @@ export default function CapacityPanel({ snapshot }) {
         <div className="flex items-center gap-2">
           <Truck className="w-5 h-5 text-cyan-400" />
           <h2 className="text-sm font-bold text-slate-100 font-mono tracking-wide uppercase">
-            Ambulance Capacity System (20 Fleet)
+            Patient Handling Intelligence (20 Fleet)
           </h2>
         </div>
         <span className="text-xs text-slate-400 font-mono">
-          Capacity: <span className="text-cyan-400 font-bold">2 Slots / Vehicle</span>
+          Slots: <span className="text-cyan-400 font-bold">2 Patients / Vehicle</span>
         </span>
       </div>
 
       {/* Grid of 20 Fleet Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 gap-2.5 overflow-y-auto max-h-[460px] pr-1">
+      <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 gap-2.5 overflow-y-auto max-h-[480px] pr-1">
         {vehicles.map(v => {
           const isFull = v.occupied_slots >= v.capacity || v.patients.some(p => p.priority === 3);
           const isPartial = v.occupied_slots === 1;
@@ -39,20 +39,20 @@ export default function CapacityPanel({ snapshot }) {
               key={v.id}
               className={`p-2.5 rounded-xl border transition hover:border-cyan-500/50 flex flex-col justify-between ${cardBorder}`}
             >
-              {/* Vehicle Title & Quadrant */}
-              <div className="flex items-center justify-between mb-1.5">
+              {/* Title & Quadrant */}
+              <div className="flex items-center justify-between mb-1">
                 <span className="font-mono font-bold text-xs text-cyan-300">
                   {v.id}
                 </span>
-                <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">
+                <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 font-mono">
                   Q{v.current_quadrant}
                 </span>
               </div>
 
               {/* Slot Visualizer Icons */}
-              <div className="my-1.5 flex items-center justify-center gap-1.5 bg-[#090D16] p-1.5 rounded-lg border border-slate-800/80">
+              <div className="my-1 flex items-center justify-center gap-1.5 bg-[#090D16] p-1.5 rounded-lg border border-slate-800/80">
                 <div
-                  className={`h-3.5 w-6 rounded flex items-center justify-center text-[9px] font-bold transition ${
+                  className={`h-4 w-6 rounded flex items-center justify-center text-[9px] font-bold transition ${
                     v.occupied_slots >= 1
                       ? v.patients[0]?.priority === 3
                         ? 'bg-red-500 text-white'
@@ -64,7 +64,7 @@ export default function CapacityPanel({ snapshot }) {
                 </div>
 
                 <div
-                  className={`h-3.5 w-6 rounded flex items-center justify-center text-[9px] font-bold transition ${
+                  className={`h-4 w-6 rounded flex items-center justify-center text-[9px] font-bold transition ${
                     v.occupied_slots >= 2
                       ? 'bg-amber-500 text-slate-950'
                       : v.patients.some(p => p.priority === 3)
@@ -80,8 +80,26 @@ export default function CapacityPanel({ snapshot }) {
                 </div>
               </div>
 
+              {/* Detailed Onboard Patients List */}
+              {v.patients && v.patients.length > 0 ? (
+                <div className="my-1 space-y-1 font-mono text-[9px]">
+                  {v.patients.map((p, idx) => (
+                    <div key={idx} className="flex justify-between items-center bg-[#080B12] px-1.5 py-0.5 rounded border border-slate-800/60">
+                      <span className={p.priority === 3 ? 'text-red-400 font-bold' : p.priority === 2 ? 'text-amber-400' : 'text-blue-400'}>
+                        P{p.priority}
+                      </span>
+                      <span className="text-slate-400">{p.service_remaining.toFixed(1)}m</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="my-1 text-[9px] font-mono text-slate-500 text-center py-1">
+                  Ready (0 Patients)
+                </div>
+              )}
+
               {/* Status Footer */}
-              <div className="mt-1 flex items-center justify-between text-[10px] font-mono">
+              <div className="mt-1 flex items-center justify-between text-[10px] font-mono border-t border-slate-800/60 pt-1">
                 <span
                   className={`font-semibold ${
                     isFull
@@ -93,7 +111,7 @@ export default function CapacityPanel({ snapshot }) {
                 >
                   {isFull ? 'FULL' : isPartial ? 'PARTIAL' : 'AVAILABLE'}
                 </span>
-                <span className="text-slate-500">
+                <span className="text-slate-500 text-[9px]">
                   {v.total_dispatches} runs
                 </span>
               </div>
