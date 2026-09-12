@@ -1,9 +1,15 @@
 import sys
 import os
 
-# Add backend directory to sys.path
-backend_dir = os.path.join(os.path.dirname(__file__), "..", "backend")
-if backend_dir not in sys.path:
-    sys.path.insert(0, backend_dir)
+# Add root and backend directories to sys.path
+root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+backend_dir = os.path.join(root_dir, "backend")
 
-from backend.main import app
+for path in [root_dir, backend_dir]:
+    if path not in sys.path:
+        sys.path.insert(0, path)
+
+from main import app
+
+# Expose app for Vercel Serverless Function
+handler = app
